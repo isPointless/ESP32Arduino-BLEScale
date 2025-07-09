@@ -61,17 +61,19 @@ bool BLEScale::manage(bool connect, bool maintain, String mac) {
     
     if(mac != "") { 
         connectMac = mac;
+    } else {
+        connectMac = "";
     }
+
 
     if(!pScan->isScanning() && _connected == false && _isConnecting == false && connect == true) { 
         pScan->start(scanTimeMs);
         if(instance->_debug) Serial.println("Scanning for peripherals");
     }
     
-    if(maintain == true) {
+    if(maintain == true && _connected == true) {
         if(heartbeatRequired()) { 
             heartbeat();
-            Serial.println("Beat!");
         }
     }
 
