@@ -50,30 +50,32 @@ bool BLEScale::manage(bool connect, bool maintain, String mac) {
      * Active scan will gather scan response data from advertisers
      *  but will use more energy from both devices
      */
-    pScan->setActiveScan(true);
+    pScan->setActiveScan(false);
     pScan->setScanCallbacks(&scanCallbacks, false);
-
-    if(!pScan->isScanning() && _connected == false && _isConnecting == false && connect == true) { 
-        pScan->start(scanTimeMs);
-        if(instance->_debug) Serial.println("Scanning for peripherals");
-    }
-    if(maintain == true) {
-        if(heartbeatRequired()) { 
-            heartbeat();
-        }
-    }
-
-    if(maintain == false && connect == false) disconnect();
-
-    if(mac != "") { 
-        connectMac = mac;
-    }
 
     if(_pClient != nullptr) {
         if(!_pClient->isConnected()) { 
             _connected = false;
         } else _connected = true;
     }
+    
+    if(mac != "") { 
+        connectMac = mac;
+    }
+
+    if(!pScan->isScanning() && _connected == false && _isConnecting == false && connect == true) { 
+        pScan->start(scanTimeMs);
+        if(instance->_debug) Serial.println("Scanning for peripherals");
+    }
+    
+    if(maintain == true) {
+        if(heartbeatRequired()) { 
+            heartbeat();
+            Serial.println("Beat!");
+        }
+    }
+
+    if(maintain == false && connect == false) disconnect();
 
     bool response = false;
 
@@ -105,6 +107,7 @@ void BLEScale::notifyCB(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8
         Serial.printf("%s\n", str.c_str());
     }
 
+    instance->_connected = true;
     static const float pow10[] = {1, 10, 100, 1000, 10000, 100000}; // precomputed powers
 
     //GENERIC
@@ -323,8 +326,10 @@ bool BLEScale::isConnected() {
 }
 
 void BLEScale::disconnect() { 
+    NimBLEScan* pScan = NimBLEDevice::getScan();
     if(_pClient == nullptr) return;
     else {
+        pScan->stop();
         _pClient->disconnect();
         NimBLEDevice::deleteClient(_pClient);
         _connected = false;
@@ -448,19 +453,16 @@ bool BLEScale::heartbeatRequired() {
 bool BLEScale::heartbeat() { 
     if(_connected == false) return false;
     if(_pClient == nullptr) return false;
-    else { 
-        if (!_pChrWRITE || _pChrWRITE->canWrite()) {
-            if(instance->_debug) Serial.println("WRITE characteristic is invalid or not writable!");
-            _connected = false;
-            return false;
-        }
 
-        if(_pChrWRITE->writeValue(HEARTBEAT, 7)){
-            _lastHeartBeat = millis();
-            return true;
-        } else {
-            _connected = false;
-            return false;
-        }
+    _lastHeartBeat = millis();
+
+    if (!_pChrWRITE || _pChrWRITE->canWrite()) {
+        if(instance->_debug) Serial.println("WRITE characteristic is invalid or not writable!");
+        _connected = false;
+        return false;
+    }
+
+    if(_pChrWRITE->writeValue(HEARTBEAT, 7)){
+        return true;
     }
 }
