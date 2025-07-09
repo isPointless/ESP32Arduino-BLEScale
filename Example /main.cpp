@@ -1,10 +1,7 @@
 #include <Arduino.h>
-
-//The timeout has been set very tightely for "generic" scales. The Bookoo Themis Mini handles 500ms. If you have issues with your scale giving a timeout use, increase before you call the header.
-//#define MAX_PACKET_PERIOD_GENERIC_MS 1000
 #include "BLEScale.h"
 
-//true doesnt work...
+//true gives a lot of info... don't use it final deployment
 #define DEBUG true
 
 bool scaleConnected = false;
@@ -12,7 +9,6 @@ unsigned long lastTare = 0;
 
 BLEScale scale(DEBUG);
 
-//AcaiaArduinoBLE scale(DEBUG);
 uint8_t goalWeight = 100;      // Goal Weight to be read from EEPROM
 
 void setup() {
