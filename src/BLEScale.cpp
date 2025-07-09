@@ -298,8 +298,8 @@ bool BLEScale::connectToServer() {
     }
 
     _isConnecting = false;
-    instance->connected_mac = advDevice->getName().c_str();
-    instance->connected_name = advDevice->getAddress().toString().c_str();
+    instance->connected_name = advDevice->getName().c_str();
+    instance->connected_mac = advDevice->getAddress().toString().c_str();
 
     if(instance->_debug) Serial.println("Connected and handshake complete!");
     return true;
