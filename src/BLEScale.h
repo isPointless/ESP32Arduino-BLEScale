@@ -1,10 +1,12 @@
 #pragma once
 
 #include "Arduino.h"
+//#include <NimBLEDevice.h>
 #include "NimBLEDevice.h"
 
 #define SERVICE_GENERIC        "0ffe"
 #define SERVICE_OLD            "1820"
+#define SERVICE_NEW            "49535343-FE7D-4AE5-8FA9-9FAFD205E455"
 #define WRITE_CHAR_OLD_VERSION "2a80"
 #define READ_CHAR_OLD_VERSION  "2a80"
 #define WRITE_CHAR_NEW_VERSION "49535343-8841-43f4-a8d4-ecbe34729bb3"

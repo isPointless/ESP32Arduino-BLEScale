@@ -53,14 +53,17 @@ bool BLEScale::manage(bool connect, bool maintain, String mac) {
     pScan->setActiveScan(true);
     pScan->setScanCallbacks(&scanCallbacks, false);
 
-    if(!pScan->isScanning() && _connected == false && _isConnecting == false) { 
+    if(!pScan->isScanning() && _connected == false && _isConnecting == false && connect == true) { 
         pScan->start(scanTimeMs);
         if(instance->_debug) Serial.println("Scanning for peripherals");
     }
-
-    if(heartbeatRequired()) { 
-        heartbeat();
+    if(maintain == true) {
+        if(heartbeatRequired()) { 
+            heartbeat();
+        }
     }
+
+    if(maintain == false && connect == false) disconnect();
 
     if(mac != "") { 
         connectMac = mac;
@@ -251,12 +254,16 @@ bool BLEScale::connectToServer() {
         if (_pChrREAD->canNotify()) {
             if (!_pChrREAD->subscribe(true, notifyCB)) {
                 pClient->disconnect();
+                _connected = false;
+                _isConnecting = false;
                 return false;
             }
         } else if (_pChrREAD->canIndicate()) {
             /** Send false as first argument to subscribe to indications instead of notifications */
             if (!_pChrREAD->subscribe(false, notifyCB)) {
                 pClient->disconnect();
+                _connected = false;
+                _isConnecting = false;
                 return false;
             }
         }
@@ -269,6 +276,8 @@ bool BLEScale::connectToServer() {
         if(instance->_debug) Serial.println("Could not find required characteristics!");
         pClient->disconnect();
         NimBLEDevice::deleteClient(pClient);
+        _connected = false;
+        _isConnecting = false;
         return false;
     }
 
@@ -283,6 +292,8 @@ bool BLEScale::connectToServer() {
         if(instance->_debug) Serial.println("Handshake failed!");
         pClient->disconnect();
         NimBLEDevice::deleteClient(pClient);
+        _connected = false;
+        _isConnecting = false;
         return false;
     }
 
@@ -316,6 +327,8 @@ void BLEScale::disconnect() {
     else {
         _pClient->disconnect();
         NimBLEDevice::deleteClient(_pClient);
+        _connected = false;
+        _isConnecting = false;
     }
 }
 
