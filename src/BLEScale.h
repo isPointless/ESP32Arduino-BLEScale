@@ -1,8 +1,7 @@
 #pragma once
 
 #include "Arduino.h"
-//#include <NimBLEDevice.h>
-#include "NimBLE-Arduino/src/NimBLEDevice.h"
+#include "NimBLEDevice.h"
 
 #define SERVICE_GENERIC        "0ffe"
 #define SERVICE_OLD            "1820"
