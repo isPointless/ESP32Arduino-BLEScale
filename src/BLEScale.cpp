@@ -299,11 +299,6 @@ bool BLEScale::connectToServer() {
             if(instance->_debug) Serial.println("Succes pChrWRITE -> canRead()");
         }
 
-        if (_pChrWRITE->subscribe()) {
-            if(instance->_debug) Serial.printf("%s Value: %s\n", _pChrWRITE->getUUID().toString().c_str(), _pChrWRITE->readValue().c_str());
-            if(instance->_debug) Serial.println("Succes pChrWRITE -> Subscribed!()");
-        }
-
         if (_pChrWRITE->canWrite()) {
             if(instance->_debug) Serial.println("Succes pChrWRITE -> canWrite()");
         }
@@ -311,7 +306,6 @@ bool BLEScale::connectToServer() {
         if (_pChrWRITE->canWriteNoResponse()) {
             if(instance->_debug) Serial.println("Succes pChrWRITE -> canWriteNoResponse!()");
         }
-
 
         if (_pChrWRITE->canNotify()) {
             if (!_pChrWRITE->subscribe(true, notifyCB)) {
@@ -343,9 +337,16 @@ bool BLEScale::connectToServer() {
         return false;
     }
 
-      //Handshake
-    _pChrWRITE->writeValue(IDENTIFY, 20, false);
-    _pChrWRITE->writeValue(NOTIFICATION_REQUEST, 14, false);
+    //Handshake
+    
+    if(_type == OLD) { 
+        _pChrWRITE->writeValue(IDENTIFY, 20, false);
+        _pChrWRITE->writeValue(NOTIFICATION_REQUEST, 14, false);
+    } else {
+        _pChrWRITE->writeValue(IDENTIFY, 20, true);
+        _pChrWRITE->writeValue(NOTIFICATION_REQUEST, 14, true);
+    }
+    
 
     _isConnecting = false;
     instance->connected_name = advDevice->getName().c_str();
