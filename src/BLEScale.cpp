@@ -23,6 +23,7 @@ BLEScale::BLEScale(bool debug)
     : clientCallbacks(this),
       scanCallbacks(this)
     { 
+        
     instance = this;
     NimBLEAdvertisedDevice* advDevice;
     _newWeightPacket = false;
@@ -57,7 +58,7 @@ bool BLEScale::manage(bool connect, bool maintain, String mac) {
         if(!_pClient->isConnected()) { 
             _connected = false;
         } else _connected = true;
-    }
+    } else _connected = false;
     
     if(mac != "") { 
         connectMac = mac;
@@ -65,13 +66,12 @@ bool BLEScale::manage(bool connect, bool maintain, String mac) {
         connectMac = "";
     }
 
-
     if(!pScan->isScanning() && _connected == false && _isConnecting == false && connect == true) { 
         pScan->start(scanTimeMs);
         if(instance->_debug) Serial.println("Scanning for peripherals");
     }
     
-    if(maintain == true && _connected == true) {
+    if(maintain == true) {
         if(heartbeatRequired()) { 
             heartbeat();
         }
@@ -92,6 +92,7 @@ bool BLEScale::manage(bool connect, bool maintain, String mac) {
             if(instance->_debug) Serial.println("Failed to connect");
             response = false;
             _connected = false;
+            _isConnecting = false;
         }
     }
     return response;
@@ -112,6 +113,26 @@ void BLEScale::notifyCB(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8
     instance->_connected = true;
     static const float pow10[] = {1, 10, 100, 1000, 10000, 100000}; // precomputed powers
 
+    //NEW (DOES NOT CONNECT??!)
+    if (instance->_type == NEW && (length == 13 || length == 17) && pData[4] == 0x05) {
+        uint16_t rawWeight = ((pData[6] & 0xff) << 8) | (pData[5] & 0xff);
+        byte scaleIndex = pData[9];
+        float scale = (scaleIndex < sizeof(pow10) / sizeof(pow10[0])) ? pow10[scaleIndex] : 1.0;
+        instance->_currentWeight = rawWeight / scale * ((pData[10] & 0x02) ? -1 : 1);
+        instance->_newWeightPacket = true;
+        if(instance->_debug) Serial.println(instance->_currentWeight);
+    }
+
+    //OLD
+    if (instance->_type == OLD && (length == 10 || length == 14)) {
+        uint16_t rawWeight = ((pData[3] & 0xff) << 8) | (pData[2] & 0xff);
+        byte scaleIndex = pData[6];
+        float scale = (scaleIndex < sizeof(pow10) / sizeof(pow10[0])) ? pow10[scaleIndex] : 1.0;
+        instance->_currentWeight = rawWeight / scale * ((pData[7] & 0x02) ? -1 : 1);
+        instance->_newWeightPacket = true;
+        if(instance->_debug) Serial.println(instance->_currentWeight);
+    }
+
     //GENERIC
     if (instance->_type == GENERIC && length == 20) {
         int32_t raw = (pData[7] << 16) | (pData[8] << 8) | pData[9];
@@ -122,24 +143,7 @@ void BLEScale::notifyCB(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8
         instance->_newWeightPacket = true;
         if(instance->_debug) Serial.println(instance->_currentWeight);
     }
-    //OLD
-    if (instance->_type == OLD && (length == 10 || length == 14)) {
-        uint16_t rawWeight = ((pData[3] & 0xff) << 8) | (pData[2] & 0xff);
-        byte scaleIndex = pData[6];
-        float scale = (scaleIndex < sizeof(pow10) / sizeof(pow10[0])) ? pow10[scaleIndex] : 1.0;
-        instance->_currentWeight = rawWeight / scale * ((pData[7] & 0x02) ? -1 : 1);
-        instance->_newWeightPacket = true;
-        if(instance->_debug) Serial.println(instance->_currentWeight);
-    }
-    //NEW (DOES NOT CONNECT??!)
-    if (instance->_type == NEW && (length == 13 || length == 17) && pData[4] == 0x05) {
-        uint16_t rawWeight = ((pData[6] & 0xff) << 8) | (pData[5] & 0xff);
-        byte scaleIndex = pData[9];
-        float scale = (scaleIndex < sizeof(pow10) / sizeof(pow10[0])) ? pow10[scaleIndex] : 1.0;
-        instance->_currentWeight = rawWeight / scale * ((pData[10] & 0x02) ? -1 : 1);
-        instance->_newWeightPacket = true;
-        if(instance->_debug) Serial.println(instance->_currentWeight);
-    }
+
     
 }
 
@@ -178,8 +182,8 @@ bool BLEScale::connectToServer() {
         }
 
         pClient = NimBLEDevice::createClient();
+        NimBLEDevice::setMTU(23);
         
-
         if(instance->_debug) Serial.printf("New client created\n");
 
         pClient->setClientCallbacks(&clientCallbacks, false);
@@ -191,6 +195,7 @@ bool BLEScale::connectToServer() {
          */
         pClient->setConnectionParams(12, 24, 0, 400);
 
+
         /** Set how long we are willing to wait for the connection to complete (milliseconds), default is 30000. */
         pClient->setConnectTimeout(500);
 
@@ -201,22 +206,21 @@ bool BLEScale::connectToServer() {
             if(instance->_debug) Serial.printf("Failed to connect (address type issue)\n");
             if(!pClient->connect(advDevice, !advDevice->getAddressType())) { 
             NimBLEDevice::deleteClient(pClient);
+            instance->_isConnecting = false;
             return false;
             }
         }
         _connected = true;
 
-        // for (auto &service : pClient->getServices()) {
-        //     Serial.printf("Found Service: %s\n", service->getUUID().toString().c_str());
-        // }
     }
 
     if (!pClient->isConnected()) {
         if (!pClient->connect(advDevice)) {
             if(instance->_debug) Serial.printf("Failed to connect\n");
+            instance->_isConnecting = false;
             return false;
         }
-    } else _pClient = pClient; // save client for later use in member var
+    }
 
     if(instance->_debug) Serial.printf("Connected to: %s RSSI: %d\n", pClient->getPeerAddress().toString().c_str(), pClient->getRssi());
     
@@ -245,6 +249,13 @@ bool BLEScale::connectToServer() {
     }
 
     //Try NEW (NO IDEA what service?!)
+    pSvc = pClient->getService(SERVICE_NEW); 
+    if (pSvc) {
+        if(instance->_debug) Serial.printf("Found scale type NEW");
+        _type = NEW;
+        _pChrREAD = pSvc->getCharacteristic(READ_CHAR_NEW_VERSION);
+        _pChrWRITE = pSvc->getCharacteristic(WRITE_CHAR_NEW_VERSION);
+    }
 
     if (_pChrREAD) {
         if (_pChrREAD->canRead()) {
@@ -254,6 +265,10 @@ bool BLEScale::connectToServer() {
 
         if (_pChrREAD->canWrite()) {
             if(instance->_debug) Serial.println("Succes pChrREAD -> canWrite()");
+        }
+
+        if (_pChrREAD->canWriteNoResponse()) {
+            if(instance->_debug) Serial.println("Succes pChrREAD -> canWriteNoResponse()");
         }
 
         if (_pChrREAD->canNotify()) {
@@ -277,6 +292,48 @@ bool BLEScale::connectToServer() {
     }
 
 
+
+    if (_pChrWRITE) {
+        if (_pChrWRITE->canRead()) {
+            if(instance->_debug) Serial.printf("%s Value: %s\n", _pChrWRITE->getUUID().toString().c_str(), _pChrWRITE->readValue().c_str());
+            if(instance->_debug) Serial.println("Succes pChrWRITE -> canRead()");
+        }
+
+        if (_pChrWRITE->subscribe()) {
+            if(instance->_debug) Serial.printf("%s Value: %s\n", _pChrWRITE->getUUID().toString().c_str(), _pChrWRITE->readValue().c_str());
+            if(instance->_debug) Serial.println("Succes pChrWRITE -> Subscribed!()");
+        }
+
+        if (_pChrWRITE->canWrite()) {
+            if(instance->_debug) Serial.println("Succes pChrWRITE -> canWrite()");
+        }
+
+        if (_pChrWRITE->canWriteNoResponse()) {
+            if(instance->_debug) Serial.println("Succes pChrWRITE -> canWriteNoResponse!()");
+        }
+
+
+        if (_pChrWRITE->canNotify()) {
+            if (!_pChrWRITE->subscribe(true, notifyCB)) {
+                pClient->disconnect();
+                _connected = false;
+                _isConnecting = false;
+                return false;
+            }
+        } else if (_pChrWRITE->canIndicate()) {
+            /** Send false as first argument to subscribe to indications instead of notifications */
+            if (!_pChrWRITE->subscribe(false, notifyCB)) {
+                pClient->disconnect();
+                _connected = false;
+                _isConnecting = false;
+                return false;
+            }
+        }
+    } else {
+        if(instance->_debug) Serial.printf("pChr = nullptr");
+    }
+
+
     if (!_pChrREAD || !_pChrWRITE) {
         if(instance->_debug) Serial.println("Could not find required characteristics!");
         pClient->disconnect();
@@ -286,25 +343,17 @@ bool BLEScale::connectToServer() {
         return false;
     }
 
-    //Handshake
-    bool ok = true;
-    if (_type == OLD || _type == NEW) {
-        if (!_pChrWRITE->writeValue(IDENTIFY, 20, false)) ok = false;
-    }
-    if (!_pChrWRITE->writeValue(NOTIFICATION_REQUEST, 14, false)) ok = false;
-
-    if (!ok) {
-        if(instance->_debug) Serial.println("Handshake failed!");
-        pClient->disconnect();
-        NimBLEDevice::deleteClient(pClient);
-        _connected = false;
-        _isConnecting = false;
-        return false;
-    }
+      //Handshake
+    _pChrWRITE->writeValue(IDENTIFY, 20, false);
+    _pChrWRITE->writeValue(NOTIFICATION_REQUEST, 14, false);
 
     _isConnecting = false;
     instance->connected_name = advDevice->getName().c_str();
     instance->connected_mac = advDevice->getAddress().toString().c_str();
+
+    
+
+    if(_pClient != nullptr) _pClient = pClient; 
 
     if(instance->_debug) Serial.println("Connected and handshake complete!");
     return true;
@@ -343,19 +392,29 @@ bool BLEScale::tare() {
     if(_connected == false) return false;
     if(_pClient == nullptr) return false;
     else {
-        if (!_pChrWRITE || !_pChrWRITE->canWrite()) {
-            if(instance->_debug) Serial.println("WRITE characteristic is invalid!");
-            _connected = false;
-            return false;
-        }
+        if(_type == GENERIC) { 
+            if (!_pChrWRITE || !_pChrWRITE->canWrite()) {
+                if(instance->_debug) Serial.println("WRITE characteristic is invalid!");
+                _connected = false;
+                return false;
+            }
 
-        if (_pChrWRITE->writeValue((_type == GENERIC ? TARE_GENERIC : TARE_ACAIA), 6)){
-            if(instance->_debug) Serial.println("tare write successful");
+            if (_pChrWRITE->writeValue(TARE_GENERIC, 6)){
+                if(instance->_debug) Serial.println("tare write successful");
+                return true;
+            } else {
+                if(instance->_debug) Serial.println("tare write failed");
+                _connected = false;
+                return false;
+            }
+        } else { //Acaia write WITHOUT response!
+            if (!_pChrWRITE || !_pChrWRITE->canWriteNoResponse()) {
+                if(instance->_debug) Serial.println("WRITE characteristic is invalid!");
+                _connected = false;
+                return false;
+            }
+            _pChrWRITE->writeValue(TARE_ACAIA, 6, false);
             return true;
-        } else {
-            _connected = false;
-            if(instance->_debug) Serial.println("tare write failed");
-            return false;
         }
     }
     return false;
@@ -364,22 +423,28 @@ bool BLEScale::tare() {
 bool BLEScale::startTimer() { 
     if(_connected == false) return false;
     if(_pClient == nullptr) return false;
-    else {
+
+    if(_type == GENERIC) {
         if (!_pChrWRITE || !_pChrWRITE->canWrite()) {
-            if(instance->_debug) Serial.println("WRITE characteristic is invalid or not writable!");
+            if(instance->_debug) Serial.println("WRITE characteristic is invalid!");
             _connected = false;
             return false;
         }
-
-        if(_pChrWRITE->writeValue((_type == GENERIC ? START_TIMER_GENERIC : START_TIMER),
-                            (_type == GENERIC ? 6                   : 7))){
+        if(_pChrWRITE->writeValue(START_TIMER_GENERIC, 6)){
             if(instance->_debug) Serial.println("start timer write successful");
             return true;
         }else{
-            _connected = false;
             if(instance->_debug) Serial.println("start timer write failed");
             return false;
         }
+    } else { // NEW/OLD: write without response
+        if (!_pChrWRITE || !_pChrWRITE->canWriteNoResponse()) {
+            if(instance->_debug) Serial.println("WRITE characteristic is invalid!");
+            _connected = false;
+            return false;
+        }
+        _pChrWRITE->writeValue(START_TIMER, 7, false);
+        return true;
     }
     return false;
 }
@@ -387,49 +452,58 @@ bool BLEScale::startTimer() {
 bool BLEScale::stopTimer() { 
     if(_connected == false) return false;
     if(_pClient == nullptr) return false;
-    else {
+
+    if(_type == GENERIC) {
         if (!_pChrWRITE || !_pChrWRITE->canWrite()) {
-            if(instance->_debug) Serial.println("WRITE characteristic is invalid or not writable!");
-            _connected = false;
+            if(instance->_debug) Serial.println("WRITE characteristic is invalid!");
             return false;
         }
-
-
-        if(_pChrWRITE->writeValue((_type == GENERIC ? STOP_TIMER_GENERIC : STOP_TIMER),
-                            (_type == GENERIC ? 6                  : 7 ))){
+        if(_pChrWRITE->writeValue(STOP_TIMER_GENERIC, 6)){
             if(instance->_debug) Serial.println("stop timer write successful");
             return true;
         }else{
-            _connected = false;
             if(instance->_debug) Serial.println("stop timer write failed");
             return false;
         }
+    } else { // NEW/OLD: write without response
+        if (!_pChrWRITE || !_pChrWRITE->canWriteNoResponse()) {
+            if(instance->_debug) Serial.println("WRITE characteristic is invalid!");
+            return false;
+        }
+        _pChrWRITE->writeValue(STOP_TIMER, 7, false);
+        return true;
     }
     return false;
 }
 
+
 bool BLEScale::resetTimer() { 
-     if(_connected == false) return false;
-     if(_pClient == nullptr) return false;
-     else {
+    if(_connected == false) return false;
+    if(_pClient == nullptr) return false;
+
+    if(_type == GENERIC) {
         if (!_pChrWRITE || !_pChrWRITE->canWrite()) {
-            if(instance->_debug) Serial.println("WRITE characteristic is invalid or not writable!");
-            _connected = false;
+            if(instance->_debug) Serial.println("WRITE characteristic is invalid!");
             return false;
         }
-
-        if(_pChrWRITE->writeValue((_type == GENERIC ? RESET_TIMER_GENERIC : RESET_TIMER),
-                            (_type == GENERIC ? 6                  : 7 ))){
+        if(_pChrWRITE->writeValue(RESET_TIMER_GENERIC, 6)){
             if(instance->_debug) Serial.println("reset timer write successful");
             return true;
         }else{
-            _connected = false;
             if(instance->_debug) Serial.println("reset timer write failed");
             return false;
         }
+    } else { // NEW/OLD: write without response
+        if (!_pChrWRITE || !_pChrWRITE->canWriteNoResponse()) {
+            if(instance->_debug) Serial.println("WRITE characteristic is invalid!");
+            return false;
+        }
+        _pChrWRITE->writeValue(RESET_TIMER, 7, false);
+        return true;
     }
     return false;
 }
+
 
 bool BLEScale::newWeightAvailable() { 
     if(_newWeightPacket == true && _connected == true) { 
@@ -458,13 +532,13 @@ bool BLEScale::heartbeat() {
 
     _lastHeartBeat = millis();
 
-    if (!_pChrWRITE || _pChrWRITE->canWrite()) {
-        if(instance->_debug) Serial.println("WRITE characteristic is invalid or not writable!");
-        _connected = false;
-        return false;
-    }
+    // if (!_pChrWRITE || _pChrWRITE->canWriteNoResponse()) {
+    //     if(instance->_debug) Serial.println("WRITE characteristic is invalid or not writable!");
+    //     return false;
+    // }
 
-    if(_pChrWRITE->writeValue(HEARTBEAT, 7)){
+    if(_pChrWRITE->writeValue(HEARTBEAT, 7, false)){
         return true;
     }
+    return false;
 }

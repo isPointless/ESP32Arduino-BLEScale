@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Arduino.h"
-//#include <NimBLEDevice.h>
 #include "NimBLEDevice.h"
 
 #define SERVICE_GENERIC        "0ffe"
@@ -83,13 +82,16 @@ private:
         void onConnect(NimBLEClient* pClient) override {
             if(instance->_debug) Serial.printf("Connected\n");
             instance->_connected = true;
+            instance->_isConnecting = false;
+            if(pClient != nullptr) instance->_pClient = pClient;
+
         }
         void onDisconnect(NimBLEClient* pClient, int reason) override {
             if(instance->_debug) Serial.printf("%s Disconnected, reason = %d - Starting scan\n", pClient->getPeerAddress().toString().c_str(), reason);
             instance->_connected = false;
+            instance->_isConnecting = false;
+            instance->_pClient = nullptr;
         }
-
-
     };
 
     class ScanCallbacks : public NimBLEScanCallbacks {
