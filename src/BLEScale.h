@@ -26,6 +26,7 @@ public:
 
     // Data access
     bool newWeightAvailable();
+    bool isConnected();
     float getWeight();              // grams
     unsigned long getTimer();       // seconds
     int getBatteryLevel();          // %
