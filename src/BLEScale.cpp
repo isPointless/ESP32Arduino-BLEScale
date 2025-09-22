@@ -177,6 +177,10 @@ bool BLEScale::isConnected() {
     return _connected;
 }
 
+bool BLEScale::isConnecting() { 
+    return _isConnecting;
+}
+
 float BLEScale::getWeight() { return _weight; }
 unsigned long BLEScale::getTimer() { return _timer; }
 int BLEScale::getBatteryLevel() { return _batteryLevel; }
