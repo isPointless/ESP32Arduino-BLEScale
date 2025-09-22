@@ -909,8 +909,8 @@ int NimBLEClient::exchangeMTUCb(uint16_t conn_handle, const ble_gatt_error* erro
  * @returns true if the request was sent successfully.
  */
 bool NimBLEClient::exchangeMTU() {
-    // int rc = ble_gattc_exchange_mtu(m_connHandle, NimBLEClient::exchangeMTUCb, this);
-    int rc = 0;
+    int rc = ble_gattc_exchange_mtu(m_connHandle, NimBLEClient::exchangeMTUCb, this);
+    if(rc == 2) rc = 0;
     if (rc != 0) {
         NIMBLE_LOGE(LOG_TAG, "MTU exchange error; rc=%d %s", rc, NimBLEUtils::returnCodeToString(rc));
         m_lastErr = rc;

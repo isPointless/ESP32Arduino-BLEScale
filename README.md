@@ -1,4 +1,4 @@
-A library to connect and use BLE scales like the Acaia Lunar, Bookoo Themis mini on ESP32 Arduino.
+## A library to connect and use BLE scales like the Acaia Lunar, Bookoo Themis mini on ESP32 Arduino.
 
 This library is based on previous work by tatemazer (AcaiaArduinoBLE) but uses a modified version of NimBLE-Arduino instead of ArduinoBLE, which is much less prone to crashing the ESP32.
 
@@ -11,3 +11,19 @@ Other scale types have NOT been tested. These might differ regarding services (t
 
 An example sketch is added. 
 
+#### The whole NimBLE library is added, because it has been modified to skip MTU Exchange: 
+
+In NimBLEClient.cpp line 912 is added:
+```
+bool NimBLEClient::exchangeMTU() {
+    int rc = ble_gattc_exchange_mtu(m_connHandle, NimBLEClient::exchangeMTUCb, this);
+    if(rc == 2) rc = 0; // << ADDED >>
+    if (rc != 0) {
+        NIMBLE_LOGE(LOG_TAG, "MTU exchange error; rc=%d %s", rc, NimBLEUtils::returnCodeToString(rc));
+        m_lastErr = rc;
+        return false;
+    }
+
+    return true;
+} // exchangeMTU
+```

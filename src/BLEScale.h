@@ -1,134 +1,121 @@
 #pragma once
-
-#include "Arduino.h"
+#include <Arduino.h>
 #include "NimBLEDevice.h"
 
-#define SERVICE_GENERIC        "0ffe"
-#define SERVICE_OLD            "1820"
-#define SERVICE_NEW            "49535343-FE7D-4AE5-8FA9-9FAFD205E455"
-#define WRITE_CHAR_OLD_VERSION "2a80"
-#define READ_CHAR_OLD_VERSION  "2a80"
-#define WRITE_CHAR_NEW_VERSION "49535343-8841-43f4-a8d4-ecbe34729bb3"
-#define READ_CHAR_NEW_VERSION  "49535343-1e4d-4bd9-ba61-23c647249616"
-#define WRITE_CHAR_GENERIC     "ff12"
-#define READ_CHAR_GENERIC      "ff11"
-#define HEARTBEAT_PERIOD_MS     2750
-#define MAX_PACKET_PERIOD_GENERIC_MS 500 
-#define MAX_PACKET_PERIOD_ACAIA_MS 2000
-
-enum scale_type{
-    UNKNOWN = -1,
-    OLD,    // Lunar (pre-2021)
-    NEW,    // Lunar (2021), Pyxis
-    GENERIC // Felicita Arc, etc
+enum class ScaleType : uint8_t {
+    UNKNOWN,
+    BOOKOO,
+    ACAIA_NEW,
+    ACAIA_OLD,
+    FELIC
 };
 
 class BLEScale {
 public:
-    BLEScale(bool debug);
-    bool manage(bool connect=true, bool maintain=true, String mac = "");
+    BLEScale(bool debug = false);
 
-    String connected_mac;
-    String connected_name;
-
-    bool isConnected();
-    bool _isConnecting;
+    // Main loop handler
+    bool manage(bool connect, bool maintain, String mac = "");
     void disconnect();
 
+    // Control
     bool tare();
     bool startTimer();
-    bool stopTimer();
     bool resetTimer();
-    bool heartbeat();
+    bool stopTimer();
 
-    bool heartbeatRequired();
-
+    // Data access
     bool newWeightAvailable();
-    float getWeight();
-    
+    float getWeight();              // grams
+    unsigned long getTimer();       // seconds
+    int getBatteryLevel();          // %
+
+    // Connection info
+    String connected_name;
+    String connected_mac;
+
 private:
-    NimBLERemoteCharacteristic* _pChrREAD;
-    NimBLERemoteCharacteristic* _pChrWRITE;
     NimBLEClient* _pClient = nullptr;
+    NimBLERemoteCharacteristic* _pChrREAD = nullptr;
+    NimBLERemoteCharacteristic* _pChrWRITE = nullptr;
+    ScaleType _type = ScaleType::UNKNOWN;
 
-    static BLEScale* instance;
-    static void notifyCB(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify);
-    bool connectToServer();
-    bool isScaleName(const std::string& name);
+    std::vector<uint8_t> dataBuffer;
+
+    static void cleanupJunkData(std::vector<uint8_t>& dataBuffer);
+    static std::pair<uint8_t, uint8_t> checksumAcaia(const uint8_t* payload, size_t len);
+    bool decodeAndHandleAcaia();             // consumes framed packets from dataBuffer
+    void handleAcaiaEventPayload(const uint8_t* payload, size_t len);
+    void handleAcaiaStatusPayload(const uint8_t* payload, size_t len);
+
+    bool _connected = false;
+    bool _isConnecting = false;
+    bool doConnect = false;
+    bool _debug = false;
+
+    float _weight = 0.f;
+    bool _weightAvailable = false;
+    unsigned long _timer = 0;
+    int _batteryLevel = -1;
+
     String connectMac;
+    uint32_t lastHeartbeat = 0;
 
-    volatile float _currentWeight;
-    volatile bool _connected;
+    // The discovered device we want to connect to
+    NimBLEAdvertisedDevice* advDevice = nullptr;
 
-    unsigned long _lastPacket;
-    unsigned long _packetPeriod;
-    unsigned long _lastHeartBeat;
-    bool _newWeightPacket;
-    
+    // Connection
+    bool connectToServer();
+    void identifyScaleType(NimBLEClient* client);
 
-    static const NimBLEAdvertisedDevice* advDevice;
-    static bool doConnect;
-    static uint32_t scanTimeMs;
+    // Notify handler
+    static void notifyCB(NimBLERemoteCharacteristic* chr, uint8_t* data,
+                         size_t length, bool isNotify, void* ctx);
+    void handleNotification(uint8_t* data, size_t length);
 
-    scale_type          _type;
-    bool                _debug; 
-    bool                _isScanning;
+    // ---- ACAIA ----
+    void performHandshakeAcaia(bool oldVersion);
+    void sendMessageAcaia(uint8_t msgType, const uint8_t* payload, size_t length, bool waitResponse = false);
+    // void sendIdAcaia();
+    void sendNotificationRequestAcaia();
+    void sendHeartbeatAcaia();
+    float decodeWeightAcaia(const uint8_t* payload, size_t len);
+    unsigned long decodeTimeAcaia(const uint8_t* payload, size_t len);
+    float decodeWeightAcaiaEvent(const uint8_t* w);
+    unsigned long decodeTimeAcaiaEvent(const uint8_t* t);
 
+    // ---- BOOKOO ----
+    void performHandshakeBookoo();
+    void sendMessageBookoo(const uint8_t* payload, size_t length,
+                           bool waitResponse = false);
+    void sendNotificationRequestBookoo();
+    void sendHeartbeatBookoo();
+    float decodeWeightBookoo(const uint8_t* data, size_t len);
 
+    // ---- FELICITA ----
+    void performHandshakeFelicita();
+    int32_t parseWeightFelicita(const uint8_t* data, size_t length);
+
+    // Common helper
+    void subscribeNotifications(NimBLERemoteCharacteristic* chr);
+
+    // ---- Callbacks ----
     class ClientCallbacks : public NimBLEClientCallbacks {
         BLEScale* _parent;
     public:
         ClientCallbacks(BLEScale* parent) : _parent(parent) {}
-        void onConnect(NimBLEClient* pClient) override {
-            if(instance->_debug) Serial.printf("Connected\n");
-            instance->_connected = true;
-            instance->_isConnecting = false;
-            if(pClient != nullptr) instance->_pClient = pClient;
-
-        }
-        void onDisconnect(NimBLEClient* pClient, int reason) override {
-            if(instance->_debug) Serial.printf("%s Disconnected, reason = %d - Starting scan\n", pClient->getPeerAddress().toString().c_str(), reason);
-            instance->_connected = false;
-            instance->_isConnecting = false;
-            instance->_pClient = nullptr;
-        }
+        void onConnect(NimBLEClient* pClient) override;
+        void onDisconnect(NimBLEClient* pClient, int reason) override;
     };
 
     class ScanCallbacks : public NimBLEScanCallbacks {
         BLEScale* _parent;
     public:
         ScanCallbacks(BLEScale* parent) : _parent(parent) {}
-        void onResult(const NimBLEAdvertisedDevice* advertisedDevice) override {
-            if(instance->_debug) Serial.printf("Advertised Device found: %s\n", advertisedDevice->toString().c_str());
-            std::string devName = advertisedDevice->getName();
-            std::string devAddr = advertisedDevice->getAddress();
-            if(instance->connectMac == "") {
-                if (_parent->isScaleName(devName)) {
-                    if(instance->_debug) Serial.printf("Found scale by name: %s\n", devName.c_str());
-                    _parent->_isConnecting = true;
-                    NimBLEDevice::getScan()->stop();
-                    // Set in parent
-                    _parent->advDevice = advertisedDevice;
-                    _parent->doConnect = true;
-                    
-                }
-            } else { 
-                if (devAddr == instance->connectMac.c_str()) { 
-                    if(instance->_debug) Serial.printf("Found scale by addr: %s\n", devAddr.c_str());
-                    _parent->_isConnecting = true;
-                    NimBLEDevice::getScan()->stop();
-                    // Set in parent
-                    _parent->advDevice = advertisedDevice;
-                    _parent->doConnect = true;
-                }
-            }
-        }
-        void onScanEnd(const NimBLEScanResults& results, int reason) override {
-            if(instance->_debug) Serial.printf("Scan Ended, reason: %d, device count: %d; Restarting scan\n", reason, results.getCount());
-        }
+        void onResult(const NimBLEAdvertisedDevice* advertisedDevice) override;
+        void onScanEnd(const NimBLEScanResults& results, int reason) override;
     };
 
-    ClientCallbacks clientCallbacks;
-    ScanCallbacks scanCallbacks;
-
+    ClientCallbacks _clientCallbacks{this};
+    ScanCallbacks _scanCallbacks{this};
 };
