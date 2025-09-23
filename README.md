@@ -4,10 +4,11 @@ This library is based on previous work by tatemazer (AcaiaArduinoBLE) but uses a
 
 Bookoo Themis mini is performing excellent with frequent weight updates. Acaia Lunar too, but with less updates.
 
-The "NEW" type Acaia (My Pearl S is "NEW" Type) aren't yet working with weight updates. Feel free to debug this. Something is not working regarding Notify.
+The "NEW" type Acaia (My Pearl S is "NEW" Type) is working properly, however there are still some issues with the checksum. It is currently partly bypassed :(
 The "OLD" type Acaia (My Lunar 2021+ from 2024 w USB C is this) is working flawless. 
+Felicita ARC is working excellent with frequent weight updates like Bookoo
 
-Other scale types have NOT been tested. These might differ regarding services (these are not discovered but manually put in) & regarding writeWithoutResponse from the Bookoo (only "generic" scale currently tested). Felicita Arc will follow soon.
+Unfortunately the Acaia & Felicita scales do not support setting the timer. I do not know the instructions for this, feel free to find out.
 
 An example sketch is added. 
 
