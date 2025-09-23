@@ -315,12 +315,10 @@ void BLEScale::notifyCB(NimBLERemoteCharacteristic* chr, uint8_t* data, size_t l
             break;
         }
         case ScaleType::ACAIA_NEW: {
-            Serial.println("ACAIA NEW");
             self->handleNotification(data, len); // already handles weight + timer
             break;
         }
         case ScaleType::ACAIA_OLD: {
-            if(self->_debug) Serial.println("ACAIA OLD");
             self->handleNotification(data, len); // already handles weight + timer
             break;
         }
@@ -382,6 +380,7 @@ void BLEScale::cleanupJunkData(std::vector<uint8_t>& buf) {
 // Acaia helpers
 // -----------------------------------------------------------------------------
 void BLEScale::performHandshakeAcaia(bool oldVersion) {
+    if(!_pClient) return;
     if (oldVersion) {
         // ACAIA OLD (svc 0x1820, chr 0x2a80 does notify + write-no-response)
         NimBLERemoteService* svc = _pClient->getService("1820");
@@ -419,11 +418,12 @@ void BLEScale::performHandshakeAcaia(bool oldVersion) {
         byte IDENTIFY_OLD[20]               = { 0xef, 0xdd, 0x0b, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, 0x31, 0x32, 0x33, 0x34, 0x9a, 0x6d };
         byte NOTIFICATION_REQUEST[14]   = { 0xef, 0xdd, 0x0c, 0x09, 0x00, 0x01, 0x01, 0x02, 0x02, 0x05, 0x03, 0x04, 0x15, 0x06 };
 
-        _pChrWRITE->writeValue(IDENTIFY_OLD, 20, false);
-        _pChrWRITE->writeValue(NOTIFICATION_REQUEST, 14, false);
+        if(_pChrWRITE) _pChrWRITE->writeValue(IDENTIFY_OLD, 20, false);
+        if(_pChrWRITE) _pChrWRITE->writeValue(NOTIFICATION_REQUEST, 14, false);
         return;
     }
 
+    if(!_pClient) return;
     // ACAIA NEW (svc 4953..., read + write distinct characteristics)
     NimBLERemoteService* svc = _pClient->getService("49535343-fe7d-4ae5-8fa9-9fafd205e455");
     if (!svc) {
@@ -449,7 +449,7 @@ void BLEScale::performHandshakeAcaia(bool oldVersion) {
     Serial.println("Sending ID and notification request...");
 
     byte IDENTIFY_NEW[20]       = { 0xef, 0xdd, 0x0b, 0x2d, 0x2d, 0x2d, 0x2d, 0x2d, 0x2d, 0x2d, 0x2d, 0x2d, 0x2d, 0x2d, 0x2d, 0x2d, 0x2d, 0x2d, 0x68, 0x3b };
-    _pChrWRITE->writeValue(IDENTIFY_NEW, 20, true);
+    if(_pChrWRITE) _pChrWRITE->writeValue(IDENTIFY_NEW, 20, true);
     //HB contains notification request
 }
 
@@ -496,13 +496,11 @@ void BLEScale::sendHeartbeatAcaia() {
         byte HEARTBEAT_SYSTEM[7]        = { 0xef, 0xdd, 0x00, 0x02, 0x00, 0x02, 0x00 };
         byte NOTIFICATION_REQUEST[14]   = { 0xef, 0xdd, 0x0c, 0x09, 0x00, 0x01, 0x01, 0x02, 0x02, 0x05, 0x03, 0x04, 0x15, 0x06 };
 
-        if (_pChrWRITE) {
             int score = 0;
-            if(_pChrWRITE->writeValue(HEARTBEAT_SYSTEM, sizeof(HEARTBEAT_SYSTEM), true)) score++;
-            if(_pChrWRITE->writeValue(NOTIFICATION_REQUEST, sizeof(NOTIFICATION_REQUEST), true)) score++;
+            if(_pChrWRITE) if(_pChrWRITE->writeValue(HEARTBEAT_SYSTEM, sizeof(HEARTBEAT_SYSTEM), true)) score++;
+            if(_pChrWRITE) if(_pChrWRITE->writeValue(NOTIFICATION_REQUEST, sizeof(NOTIFICATION_REQUEST), true)) score++;
             if (_debug) {
                 Serial.printf("Sent ACAIA NEW heartbeat [%s]\n", score == 2? "OK" : "FAIL");
-            }
         } else {
             if (_debug) Serial.println("ACAIA OLD heartbeat skipped, WRITE char invalid");
         }
